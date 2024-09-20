@@ -1,0 +1,59 @@
+package org.example;
+
+import java.util.*;
+
+public class Survey {
+    private String question;
+    private List<String> options;
+    private Map<Long, String> responses = new HashMap<>();
+    private int totalUsers;
+
+    public Survey(String question, List<String> options, int totalUsers) {
+        this.question = question;
+        this.options = options;
+        this.totalUsers = totalUsers;
+    }
+
+    public String getQuestion() {
+        return question;
+    }
+
+    public List<String> getOptions() {
+        return options;
+    }
+
+    public boolean addResponse(long userId, String response) {
+        if (responses.containsKey(userId) || !options.contains(response)) {
+            return false;
+        }
+        responses.put(userId, response);
+        System.out.println("User " + userId + " responded: " + response);
+        return true;
+    }
+
+    public boolean allResponded() {
+        return responses.size() == totalUsers;
+    }
+
+    public List<Map.Entry<String, Integer>> getSortedResults() {
+        Map<String, Integer> results = new HashMap<>();
+
+        for (String option : options) {
+            results.put(option, 0);
+        }
+
+        for (String response : responses.values()) {
+            results.put(response, results.get(response) + 1);
+        }
+
+        List<Map.Entry<String, Integer>> sortedResults = new ArrayList<>(results.entrySet());
+        sortedResults.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
+
+        int totalResponses = responses.size();
+        for (Map.Entry<String, Integer> entry : sortedResults) {
+            entry.setValue((entry.getValue() * 100) / totalResponses);
+        }
+
+        return sortedResults;
+    }
+}
