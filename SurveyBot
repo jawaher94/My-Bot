@@ -1,0 +1,164 @@
+package org.example;
+
+import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+
+import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+public class SurveyBot extends TelegramLongPollingBot {
+
+    private Map<Long, User> users = new HashMap<>();
+    private Survey activeSurvey = null;
+
+    @Override
+    public String getBotUsername() {
+        return "jwa94Bot";
+    }
+
+    @Override
+    public String getBotToken() {
+        return "7052881932:AAHKvEtRQRj1Sl2G4QROYVUVVbxeb2rJgwA";
+    }
+
+    @Override
+    public void onUpdateReceived(Update update) {
+        if (update.hasMessage() && update.getMessage().hasText()) {
+            String messageText = update.getMessage().getText();
+            long chatId = update.getMessage().getChatId();
+
+            if (messageText.equalsIgnoreCase("/start") || messageText.equalsIgnoreCase("hi") || messageText.equalsIgnoreCase("היי")) {
+                handleNewUser(chatId);
+            } else if (messageText.startsWith("/createsurvey")) {
+                handleSurveyCreation(chatId, messageText);
+            } else {
+                handleSurveyResponse(chatId, messageText);
+            }
+        }
+    }
+
+    private void handleNewUser(long chatId) {
+        if (!users.containsKey(chatId)) {
+            users.put(chatId, new User(chatId));
+            sendMessage(chatId, "Welcome! You have joined the community.");
+            broadcastMessage("A new user has joined. Current members: " + users.size());
+            System.out.println("New user added with chat ID: " + chatId);
+        } else {
+            sendMessage(chatId, "You are already part of the community.");
+        }
+    }
+
+    private void handleSurveyCreation(long chatId, String messageText) {
+        if (users.size() < 3) {
+            sendMessage(chatId, "There must be at least 3 members to create a survey.");
+            System.out.println("Attempted to create a survey with less than 3 members.");
+            return;
+        }
+
+        if (activeSurvey != null) {
+            sendMessage(chatId, "There is already an active survey.");
+            System.out.println("Attempted to create a new survey while one is active.");
+            return;
+        }
+
+        String[] parts = messageText.split(";");
+        if (parts.length < 3) {
+            sendMessage(chatId, "Incorrect format. Use /createsurvey <delay(in minutes)>; <question>; <option1, option2, option3, option4>.");
+            return;
+        }
+
+        int delay = Integer.parseInt(parts[1].trim());
+        String question = parts[2].trim();
+        List<String> options = Arrays.asList(parts[3].trim().split(","));
+
+        if (options.size() < 2 || options.size() > 4) {
+            sendMessage(chatId, "Each question must have between 2 to 4 options.");
+            return;
+        }
+
+        activeSurvey = new Survey(question, options, users.size());
+        sendMessage(chatId, "Survey created successfully. It will be sent in " + delay + " minute(s).");
+        System.out.println("Survey created by user: " + chatId);
+
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.schedule(() -> sendSurvey(chatId), delay, TimeUnit.MINUTES);
+    }
+
+    private void sendSurvey(long chatId) {
+        if (activeSurvey == null) return;
+
+        broadcastMessage("New survey: " + activeSurvey.getQuestion());
+        for (String option : activeSurvey.getOptions()) {
+            broadcastMessage(option);
+        }
+
+        startSurveyTimer(chatId);
+        System.out.println("Survey sent to all members.");
+    }
+
+    private void startSurveyTimer(long chatId) {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.schedule(() -> closeSurvey(chatId), 5, TimeUnit.MINUTES);
+        System.out.println("Survey timer started for 5 minutes.");
+    }
+
+    private void handleSurveyResponse(long chatId, String messageText) {
+        if (activeSurvey == null) {
+            sendMessage(chatId, "There is no active survey.");
+            return;
+        }
+
+        boolean success = activeSurvey.addResponse(chatId, messageText);
+        if (!success) {
+            sendMessage(chatId, "Either you have already responded or the answer is invalid.");
+            System.out.println("Invalid or duplicate response from user: " + chatId);
+            return;
+        }
+
+        sendMessage(chatId, "Your response has been recorded.");
+        System.out.println("Response recorded from user: " + chatId);
+
+        if (activeSurvey.allResponded()) {
+            closeSurvey(chatId);
+        }
+    }
+
+    private void closeSurvey(long chatId) {
+        if (activeSurvey == null) return;
+
+        sendResults(chatId, activeSurvey);
+        activeSurvey = null;
+        System.out.println("Survey closed and results sent.");
+    }
+
+    private void sendResults(long chatId, Survey survey) {
+        List<Map.Entry<String, Integer>> sortedResults = survey.getSortedResults();
+        sendMessage(chatId, "Survey results:");
+
+        for (Map.Entry<String, Integer> entry : sortedResults) {
+            sendMessage(chatId, entry.getKey() + ": " + entry.getValue() + "%");
+        }
+        System.out.println("Results sent to user: " + chatId);
+    }
+
+    private void sendMessage(long chatId, String text) {
+        SendMessage message = new SendMessage();
+        message.setChatId(String.valueOf(chatId));
+        message.setText(text);
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void broadcastMessage(String text) {
+        for (long chatId : users.keySet()) {
+            sendMessage(chatId, text);
+        }
+    }
+}
