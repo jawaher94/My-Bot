@@ -1,0 +1,14 @@
+package org.example;
+
+
+public class User {
+    private long chatId;
+
+    public User(long chatId) {
+        this.chatId = chatId;
+    }
+
+    public long getChatId() {
+        return chatId;
+    }
+}
